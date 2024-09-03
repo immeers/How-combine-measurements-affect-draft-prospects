@@ -1,0 +1,323 @@
+---
+title: "final_proj_qmd"
+format: html
+editor: visual
+author: "Imogen Meers"
+---
+
+## How do combine measurements affect draft prospects?
+
+## Why?
+
+I chose this problem to look for correlation between combine measurements and draft results because the draft is so competitive and athletes/coaches are always looking for ways to get an edge. If there were particular measurements you could target to improve your chances that would be useful for athletes/coaches to know.
+
+## How?
+
+1.  Using a binomial logistic regression to predict combine result of drafted or not
+
+    I created a binomial field to indicate whether all combine athletes were drafted or not, which I would use as an outcome for my binomial logistic regression. I started testing with 1 predictor using each of the most popular combine measurements. Then, I compared the top 2 using main effect terms and interaction and the top 3 using main effect terms. I made sure to use VIF values and check for drastic changes in coefficients of the same variables to ensure there was not too much collinearity between my predictors. I made a table of sorted AIC values and ANOVA to compare which model was the best.
+
+2.  Effect of weight by position on pick number
+
+    After testing for general correlation, I created a mixed effects model to see effect of weight on pick number when creating an intercept by position. I chose to include the position as in football, body types differ a lot and depending on the position, it is common for players to have different weight goals.
+
+    NB: I chose to only look at weight (not hand, arm and height) because whilst interesting, are not that useful for prospects as they cannot be changed.
+
+    ### Data
+
+    Loading relevant packages and data
+
+```{r}
+#| output: false
+library(dplyr)
+library(readr)
+library(lme4)
+library(ggplot2)
+library(tidyverse)
+library(corrr)
+library(sjPlot)
+
+combine <- read_csv("C:/Users/immim/Downloads/combine.csv")
+draft <- read_csv("C:/Users/immim/Downloads/draft.csv")
+```
+
+Clean and create usable dataset "combine_draft"
+
+```{r}
+#| output: false
+draft <- draft %>%
+  mutate(draft = as.numeric(draft)) %>%
+  select(playerId, draft, round, pick) %>%
+  filter(draft >= 1987)
+
+combine_draft <- combine %>% distinct(playerId, .keep_all = TRUE) %>%
+  full_join(draft, by = "playerId")
+
+combine_draft <- combine_draft %>% mutate(drafted = ifelse(!is.na(draft), 1, 0))
+
+
+abbreviation = c("QB", "RB", "FB", "TB", "HB", "OL", "G", "LG", "RG", "T", "LT", "RT", "C", "WR", "TE", "DL", "DE", "LE", "RE", "DT", "NT", "LB", "MLB", "ILB", "OLB", "CB", "S", "SS", "FS", "LS", "P", "K", "PK")
+
+position = c("Quarterback", "Running Back", "Fullback", "Tailback", "Halfback", "Offensive Line", "Guard", "Left Guard", "Right Guard", "Tackle", "Left Tackle", "Right Tackle", "Center", "Wide Receiver", "Tight End", "Defensive Lineman", "Defensive End", "Left End", "Right End", "Defensive Tackle", "Nose Tackle", "Linebacker", "Middle Linebacker", "Inside Linebacker",
+             "Outside Linebacker", "Cornerback", "Safety", "Strong Safety", "Free Safety", "Long Snapper", "Punter", "Kicker", "Place Kicker")
+
+#so that i can use full name for position when i graph the intersect
+lookup <- as.data.frame(list(abbreviation, position))
+colnames(lookup) = c("combinePosition", "fullPos")
+
+combine_draft <- inner_join(combine_draft, lookup)
+
+
+```
+
+### Visualisations to select predictors
+
+1\. Using binomial model to predict effect on drafted or not
+
+2\. Effect of weight by pos on round number
+
+```{r}
+combine_draft %>% 
+  # Select just the variables that
+  # I want to visualize:
+  select(drafted, combine40yd, 
+         combineVert, combineBroad, combineBench, combine3cone, combine60ydShuttle) %>% 
+  # Use the whiff column as an "ID" column 
+  # and then pivot the data into long form
+  # I'd use whiffs as my outcome variable, 
+  # so I want to see everything compared to
+  # it. If you are planning to use a different
+  # variable as your outcome, you should change
+  # what comes after the - to that variable.
+  pivot_longer(cols = -drafted) %>% 
+  # Plot every value against whiffs
+  ggplot(aes(value, drafted)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  # Put each variable into its own plot:
+  facet_wrap(vars(name), scales = "free") +
+  theme_minimal() 
+
+combine_draft %>% 
+  # Select just the variables that
+  # I want to visualize:
+  select(drafted, combine40yd, 
+         combineVert, combineBroad, combineBench, combine3cone, combine60ydShuttle) %>% 
+  # Use the whiff column as an "ID" column 
+  # and then pivot the data into long form
+  # I'd use whiffs as my outcome variable, 
+  # so I want to see everything compared to
+  # it. If you are planning to use a different
+  # variable as your outcome, you should change
+  # what comes after the - to that variable.
+  pivot_longer(cols = -drafted) %>% 
+  # Plot every value against whiffs
+  ggplot() +
+  geom_boxplot(aes(x=drafted, y = value, group=drafted)) +
+  # Put each variable into its own plot:
+  facet_wrap(vars(name), scales = "free") +
+  theme_minimal() 
+
+
+
+rplot(correlate(combine_draft))+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+### Models for part 1
+
+#### 1 Main Effect Term
+
+```{r}
+model1 <- glm(drafted ~ combineBroad , data = combine_draft, family = binomial)
+summary(model1)
+x <- list(as.character(model1$terms)[3], AIC(model1))
+aic_models <-  as.data.frame(x, col.names = c("model", "aic"))
+sjPlot::plot_model(model1, type ="pred") #part of logistic regression curve
+```
+
+```{r}
+model1_2 <- glm(drafted ~ combineVert , data = combine_draft, family = binomial)
+summary(model1_2)
+x <- list(as.character(model1_2$terms)[3], AIC(model1_2))
+aic_models <- rbind(aic_models, x)
+sjPlot::plot_model(model1_2, type ="pred") #part of logistic regression curve
+```
+
+```{r}
+model1_3 <- glm(drafted ~ combine40yd , data = combine_draft, family = binomial)
+summary(model1_3)
+x <- list(as.character(model1_3$terms)[3], AIC(model1_3))
+aic_models <- rbind(aic_models, x)
+sjPlot::plot_model(model1_3, type ="pred") #part of logistic regression curve
+
+
+```
+
+```{r}
+model1_4 <- glm(drafted ~ combine60ydShuttle , data = combine_draft, family = binomial)
+summary(model1_4)
+x <- list(as.character(model1_4$terms)[3], AIC(model1_4))
+aic_models <- rbind(aic_models, x)
+sjPlot::plot_model(model1_4, type ="pred") #part of logistic regression curve
+```
+
+```{r}
+model1_5 <- glm(drafted ~ combineBench, data = combine_draft, family = binomial)
+summary(model1_5)
+x <- list(as.character(model1_5$terms)[3], AIC(model1_5))
+aic_models <- rbind(aic_models, x)
+sjPlot::plot_model(model1_2, type ="pred") #part of logistic regression curve
+```
+
+#### 2 Main Effect Terms
+
+```{r}
+model2 <- glm(drafted ~ combine60ydShuttle + combineBench, data = combine_draft, family = binomial)
+summary(model2)
+performance::check_collinearity(model2)
+x <- list(as.character(model2$terms)[3], AIC(model2))
+aic_models <- rbind(aic_models, x)
+
+exp(model2$coefficients)
+margins::margins(model2)
+sjPlot::plot_model(model2, type ="pred") #part of logistic regression curve
+
+
+```
+
+For this model, both 60yd shuttle and bench are significant at the 0.01% significance level as their p value \< 0.001 and have z values \< -1.96 or \>1.96.
+
+Looking at the exponents, you can see for every 1s increase in shuttle your odds of getting drafted decrease (odds \< 1) but for bench, for every increase by 1 rep, your odds of getting drafted increase (odds \> 1)
+
+Looking at the margins and the logistic curve., on average for every 1 rep increase in bench, the probability of getting drafted increases by 0.012, when all other conditions are constant. On average for every 1 sec increase in 60yd shuttle time, the probability of getting drafted decreases by 0.27, when all other conditions are constant.
+
+```{r}
+model2_1 <- glm(drafted ~ combine60ydShuttle + combineBroad, data = combine_draft, family = binomial)
+summary(model2_1)
+x <- list(as.character(model2_1$terms)[3], AIC(model2_1))
+aic_models <- rbind(aic_models, x)
+performance::check_collinearity(model2_1)
+sjPlot::plot_model(model2_1, type = "pred")
+```
+
+#### 2 Interaction Terms
+
+```{r}
+model2_2 <- glm(drafted ~ combine60ydShuttle * combineBench, data = combine_draft, family = binomial)
+summary(model2_2)
+x <- list(as.character(model2_2$terms)[3], AIC(model2_2))
+aic_models <- rbind(aic_models, x)
+sjPlot::plot_model(model2_2, type = "pred")
+```
+
+```{r}
+model2_3 <- glm(drafted ~ combine60ydShuttle * combineBroad, data = combine_draft, family = binomial)
+summary(model2_3)
+x <- list(as.character(model2_3$terms)[3], AIC(model2_3))
+aic_models <- rbind(aic_models, x)
+sjPlot::plot_model(model2_3, type = "pred")
+```
+
+#### 3 Main Effect Terms
+
+```{r}
+model3 <- glm(drafted ~ combineBroad + combineVert + combine60ydShuttle, data = combine_draft, family = binomial)
+summary(model3)
+x <- list(as.character(model3$terms)[3], AIC(model3))
+aic_models <- rbind(aic_models, x)
+performance::check_collinearity(model3)
+sjPlot::plot_model(model3, type ="pred") #part of logistic regression curve
+```
+
+```{r}
+model3_1 <- glm(drafted ~ combineBroad + combineBench + combine60ydShuttle, data = combine_draft, family = binomial)
+summary(model3_1)
+x <- list(as.character(model3_1$terms)[3], AIC(model3_1))
+aic_models <- rbind(aic_models, x)
+performance::check_collinearity(model3_1)
+sjPlot::plot_model(model3_1, type ="pred") #part of logistic regression curve
+```
+
+------------------------------------------------------------------------
+
+### Model for part 2
+
+#### Generalised Linear Model
+
+```{r}
+weight1 <- lm(pick ~ combineWeight, data = combine_draft)
+summary(weight1)
+
+plot(x=combine_draft$combineWeight,y=combine_draft$pick, col = "red"
+     , abline(weight1), xlab = "weight (lb)", ylab = "pick")
+
+```
+
+First, I just looked at a generalised linear model to see the effect of weight on pick number. My results show significant evidence at the 0.01% significance level to suggest a correlation between combine weight and pick number. Although, according to my r\^2 value 0.002 it is a very weak correlation. The coefficient shows for every 1lb increase in weight, your pick number will decrease by 0.09 (earlier in the draft)
+
+```{r}
+ggplot(combine_draft, aes(x = combineWeight, y = pick)) +
+  geom_point() +
+  facet_wrap(~fullPos)+
+  stat_smooth(method = "lm")
+```
+
+I plotted weight-pick by position to see if there was any difference between positions and if separating them may produce a better model. From my graphs, you can see that different positions produce groupings at different x values. Therefore, I thought it would be worth investigating a mixed effects model.
+
+#### Mixed Effects Model
+
+```{r}
+weight <- lmer(pick ~ combineWeight + (1|fullPos), data = combine_draft)
+summary(weight)
+performance::r2(weight)
+
+```
+
+Using the standard fixed effects model, which has a significant t value of -8.4, for every 1lb heavier you are, your pick number will be 0.53 less (earlier in the draft). This indicates that weight may be a significant factor for getting drafted but that it varies by position
+
+Based on the conditional and marginal R2 values, by adding intercepts by position, this model can account for an additional 7% variance.
+
+```{r}
+random_effects = ranef(weight)
+ranef_df <-  data.frame(
+  int = random_effects$fullPos$`(Intercept)`,
+  player = rownames(random_effects$fullPos)
+)
+
+ggplot(ranef_df, aes(x=int, y=reorder(player, int))) +
+  geom_point() + 
+  labs(x= "intercept", y="player") +
+  theme_minimal()
+
+sjPlot::plot_model(weight, type ="pred") #fixed effects
+```
+
+When plotting the intercepts by position we can see that the "starting points" of weight by position differ a lot. As expected the d-line and o-line positions, have a higher intercept when it comes to their linear model, indicating that their weight has a higher baseline. However the generally more athletic positions such as cornerback, safety and receiver, have a much lower intercept indicating that their linear models have a much lower baseline.
+
+**pick \~ combineWeight + (1\|fullPos)**
+
+### AIC Comparison
+
+```{r}
+aic_models %>% arrange(aic)
+```
+
+My table of AIC values by model makes it easy to compare which model performed the best. From this, you can see the two main term model, drafted \~ combine60ydShuttle + combineBench, performed the best
+
+### ANOVA
+
+```{r}
+anova(model2, model2_2)
+```
+
+Using anova as a second method of comparison, you can see that there is not evidence at the 5% significance level to suggest a significant difference between my top two models. Therefore, I would go with model 1, drafted \~ combine60ydShuttle + combineBench because the complexity of adding interaction terms is not worth the very minimal impact.
+
+**drafted \~ combine60ydShuttle + combineBench**
+
+### Practical Implications
+
+Based on the results of my logistic regression, if I were a coach looking at this data, I would track closely my athletes' bench and 60 yd shuttle in order to see who on my team is likely to get drafted as these measurements are the best predictors.
+
+Based on the results of my mixed effects model, I would make sure to tailor weight gain programs before the draft as you can see that different positions' linear regressions have different "baselines" for weight.
+
+Although these models showed some significant results regarding p and z values, it is important to note that not all players that get drafted perform all/any tasks at the combine, which means my data set has a lot of NAs. Furthermore, there are also many other factors such as skill, performance history and team preferences that the models do not consider and will also significantly impact draft prospects.
